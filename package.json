@@ -11,10 +11,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",
-    "@lucid-dreams/agent-kit": "^0.2.24",
     "hono": "^4.11.9",
-    "viem": "^2.40.3",
-    "zod": "^4.1.12"
+    "viem": "^2.40.3"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
