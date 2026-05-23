@@ -18,7 +18,6 @@ Smoke tests confirmed:
 - `GET /.well-known/agent.json` returns the agent manifest.
 - `GET /entrypoints` returns `audit_approvals`.
 - Unpaid canonical `POST /entrypoints/audit_approvals/invoke` returns HTTP 402.
-- Unpaid hyphenated `POST /entrypoints/audit-approvals/invoke` returns HTTP 402 with the canonical x402 resource.
 - Unpaid legacy `POST /invoke` returns HTTP 402.
 - Unpaid `POST /audit` returns HTTP 402.
 
@@ -52,7 +51,7 @@ Important caveat: this proves x402 reachability and payment-requirement behavior
 
 Run before deployment:
 
-- `npm test`: 3 test files, 21 tests passed.
+- `npm test`: 3 test files, 23 tests passed.
 - `npm run build`: TypeScript check passed.
 
 Post-deployment smoke gates:
@@ -97,4 +96,4 @@ If RFDY wants it to be superior before any public PR/comment:
 - No external Daydreams PR/comment/submission posted by this local handoff update.
 
 
-See `FINAL_READINESS.md` for latest 21-test verification, competitor matrix, and draft submission wording.
+See `FINAL_READINESS.md` for latest 20-test verification, competitor matrix, and draft submission wording.

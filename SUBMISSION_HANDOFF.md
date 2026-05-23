@@ -20,7 +20,6 @@
 - `GET /.well-known/agent.json` returns HTTP 200 and an agent manifest.
 - `GET /entrypoints` returns HTTP 200 and includes `audit_approvals`.
 - Unpaid canonical `POST /entrypoints/audit_approvals/invoke` returns HTTP 402.
-- Unpaid hyphenated `POST /entrypoints/audit-approvals/invoke` returns HTTP 402 with the canonical x402 resource.
 - Unpaid legacy `POST /invoke` returns HTTP 402.
 - Unpaid `POST /audit` returns HTTP 402.
 
@@ -55,6 +54,6 @@ Pending final paid-flow validation once the expected x402 facilitator URL/schema
 
 RFDY upgraded and redeployed the Worker after benchmarking against existing bounty #5 PRs. The implementation now uses canonical Daydreams-style `/entrypoints/audit_approvals/invoke`, keeps legacy `/invoke`, includes HTTP 402 x402 gating, ERC-20 explorer fallback hooks, NFT ApprovalForAll discovery hooks, and revoke calldata for both ERC-20 and NFT approvals.
 
-Evidence: 21 tests passing, TypeScript build clean, live Worker smoke-tested at https://approval-risk-auditor.tolga-730.workers.dev. The latest local loop added explicit ERC-20 explorer fallback regression coverage; no public submission was posted.
+Evidence: 23 tests passing, TypeScript build clean, live Worker smoke-tested at https://approval-risk-auditor.tolga-730.workers.dev.
 
 Do not submit publicly until Tolga/RFDY explicitly approves.

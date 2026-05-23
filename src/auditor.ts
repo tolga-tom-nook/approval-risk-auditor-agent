@@ -1,6 +1,6 @@
 import { encodeFunctionData, getAddress, isAddress, type Hex } from "viem";
 
-export type SupportedChainKey = "ethereum" | "base" | "polygon" | "arbitrum" | "optimism";
+export type SupportedChainKey = "ethereum" | "base" | "polygon" | "arbitrum" | "optimism" | "bsc" | "avalanche" | "fantom" | "gnosis";
 export type ApprovalStandard = "erc20" | "erc721" | "erc721_approval_for_all" | "erc1155_approval_for_all";
 export type RiskSeverity = "critical" | "high" | "medium" | "low";
 
@@ -11,6 +11,8 @@ export interface ApprovalForRisk {
   lastUpdatedAt?: string;
   tokenSymbol?: string;
   spender: string;
+  spenderHasCode?: boolean | undefined;
+  knownSpender?: boolean | undefined;
 }
 
 export interface RiskClassification {
@@ -31,6 +33,8 @@ export interface RevokeTxInput {
   chainId: number;
   tokenAddress: string;
   spender: string;
+  spenderHasCode?: boolean | undefined;
+  knownSpender?: boolean | undefined;
 }
 
 export interface RevokeTxData {
@@ -62,6 +66,18 @@ export function normalizeChainKey(chain: string | number): SupportedChainKey {
     "10": "optimism",
     optimism: "optimism",
     op: "optimism",
+    "56": "bsc",
+    bsc: "bsc",
+    binance: "bsc",
+    "43114": "avalanche",
+    avalanche: "avalanche",
+    avax: "avalanche",
+    "250": "fantom",
+    fantom: "fantom",
+    ftm: "fantom",
+    "100": "gnosis",
+    gnosis: "gnosis",
+    xdai: "gnosis",
   };
   const normalized = aliases[key];
   if (!normalized) {
@@ -95,6 +111,14 @@ export function classifyApprovalRisk(
     reasons.push("NFT operator can transfer every token in this collection.");
   }
 
+  if (approval.spenderHasCode === false) {
+    flags.push("unknown_spender_eoa");
+    reasons.push("Spender appears to be an EOA or has no bytecode on this chain.");
+  } else if (approval.knownSpender === false) {
+    flags.push("unknown_spender_contract");
+    reasons.push("Spender contract is not in the known safe/protocol allowlist.");
+  }
+
   if (approval.lastUpdatedAt) {
     const ageMs = now.getTime() - new Date(approval.lastUpdatedAt).getTime();
     const ageDays = ageMs / 86_400_000;
@@ -107,6 +131,8 @@ export function classifyApprovalRisk(
   let severity: RiskSeverity = "low";
   if (flags.includes("unlimited_allowance") || flags.includes("operator_approval_for_all")) {
     severity = "critical";
+  } else if (flags.includes("unknown_spender_eoa") || flags.includes("unknown_spender_contract")) {
+    severity = "high";
   } else if (flags.includes("stale_approval")) {
     severity = "high";
   } else if (flags.includes("nonzero_allowance")) {

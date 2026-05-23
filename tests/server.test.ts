@@ -150,6 +150,19 @@ describe("HTTP service", () => {
     expect((await res.json()) as object).toMatchObject({ entrypoint: "audit_approvals", result: sampleResult });
   });
 
+  it("supports short audit route used by agent-kit examples", async () => {
+    const audit = vi.fn(async () => sampleResult);
+    const app = createServer({ audit });
+    const res = await app.request("/entrypoints/audit/invoke", {
+      method: "POST",
+      body: JSON.stringify({ entrypoint: "audit", input: { wallet: sampleResult.wallet, chains: ["base"] } }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(audit).toHaveBeenCalledWith({ wallet: sampleResult.wallet, chains: ["base"] });
+  });
+
   it("keeps unpaid /audit available when no payment address is configured", async () => {
     const audit = vi.fn(async () => sampleResult);
     const app = createServer({ audit });

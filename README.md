@@ -6,13 +6,14 @@ This repo now has a live Cloudflare Worker deployment for RFDY review. See `RFDY
 
 ## What it does
 
-- Scans curated top ERC-20 approval history across Ethereum, Base, Polygon, Arbitrum, and Optimism.
+- Scans curated top ERC-20 approval history across Ethereum, Base, Polygon, Arbitrum, Optimism, BSC, Avalanche, Fantom, and Gnosis.
 - Reads current `allowance(owner, spender)` before reporting so revoked/zero allowances are ignored.
 - Flags:
   - `unlimited_allowance`
   - `nonzero_allowance`
   - `stale_approval`
   - `operator_approval_for_all` for NFT collection approvals
+  - `unknown_spender_contract` / `unknown_spender_eoa` when bytecode checks are available
 - Builds revoke calldata:
   - ERC-20: `approve(spender, 0)`
   - NFT: `setApprovalForAll(operator, false)`
@@ -21,6 +22,7 @@ This repo now has a live Cloudflare Worker deployment for RFDY review. See `RFDY
   - `GET /entrypoints`
   - `POST /entrypoints/audit_approvals/invoke` canonical Daydreams-style invoke route
   - `POST /entrypoints/audit-approvals/invoke` compatibility alias
+  - `POST /entrypoints/audit/invoke` short agent-kit-style compatibility alias
   - `POST /invoke` legacy compatibility route
   - `POST /audit` legacy direct audit route
 - Enforces x402-style payment when `PAYMENT_ADDRESS` is configured:
@@ -93,6 +95,7 @@ Environment:
 - `GET /entrypoints` — Daydreams/agent-kit-style entrypoint list.
 - `POST /entrypoints/audit_approvals/invoke` — canonical Daydreams-style agent invocation endpoint.
 - `POST /entrypoints/audit-approvals/invoke` — compatibility alias for hyphenated entrypoint clients.
+- `POST /entrypoints/audit/invoke` — compatibility alias for short `audit` entrypoint clients.
 - `POST /invoke` — legacy compatibility invocation endpoint.
 - `POST /audit` — legacy direct audit endpoint with same payment enforcement.
 
@@ -153,6 +156,10 @@ Set any of these to override public/default RPC behavior:
 - `POLYGON_RPC_URL`
 - `ARBITRUM_RPC_URL`
 - `OPTIMISM_RPC_URL`
+- `BSC_RPC_URL`
+- `AVALANCHE_RPC_URL`
+- `FANTOM_RPC_URL`
+- `GNOSIS_RPC_URL`
 
 ## Docker
 

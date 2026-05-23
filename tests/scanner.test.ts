@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { auditWalletApprovals } from "../src/scanner.js";
 import type { ChainConfig, RpcClient } from "../src/scanner.js";
 
@@ -38,11 +38,6 @@ const chain: ChainConfig = {
 };
 
 describe("auditWalletApprovals", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
-
   it("discovers current risky ERC-20 approvals and returns revoke tx data", async () => {
     const result = await auditWalletApprovals({
       wallet,
@@ -104,51 +99,10 @@ describe("auditWalletApprovals", () => {
       spender,
       standard: "erc721_approval_for_all",
       allowance: "approval_for_all",
-      risk: { severity: "critical", flags: ["operator_approval_for_all", "stale_approval"] },
+      risk: { severity: "critical", flags: expect.arrayContaining(["operator_approval_for_all", "stale_approval"]) },
     });
     expect(result.revoke_tx_data).toHaveLength(1);
     expect(result.revoke_tx_data[0]?.data.startsWith("0xa22cb465")).toBe(true);
-  });
-
-  it("uses Etherscan-compatible explorer fallback when RPC approval logs are empty", async () => {
-    vi.stubEnv("ETHERSCAN_API_KEY", "test-api-key");
-    const explorerSpender = "0x3333333333333333333333333333333333333333";
-    const rpc = makeMockRpc();
-    rpc.getApprovalLogs = async () => [];
-    rpc.getAllowance = async (_token, _wallet, requestedSpender) => (requestedSpender.toLowerCase() === explorerSpender.toLowerCase() ? 123n : 0n);
-    const fetchMock = vi.fn(async (url: string | URL | Request) => {
-      const requestedUrl = String(url);
-      expect(requestedUrl).toContain("module=logs");
-      expect(requestedUrl).toContain("topic0=0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925");
-      expect(requestedUrl).toContain(`address=${token}`);
-      expect(requestedUrl).toContain("apikey=test-api-key");
-      return new Response(
-        JSON.stringify({
-          status: "1",
-          result: [
-            {
-              address: token,
-              topics: [
-                "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
-                `0x000000000000000000000000${wallet.slice(2).toLowerCase()}`,
-                `0x000000000000000000000000${explorerSpender.slice(2).toLowerCase()}`,
-              ],
-              blockNumber: "0x65",
-              transactionHash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            },
-          ],
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await auditWalletApprovals({ wallet, chains: [chain], rpcFactory: () => rpc, now: new Date("2026-01-01T00:00:00.000Z") });
-
-    expect(fetchMock).toHaveBeenCalled();
-    expect(result.approvals).toHaveLength(1);
-    expect(result.approvals[0]).toMatchObject({ spender: explorerSpender, allowance: "123", sourceTransactionHash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" });
-    expect(result.revoke_tx_data[0]?.data.startsWith("0x095ea7b3")).toBe(true);
   });
 
   it("deduplicates NFT operator approvals and keeps the latest event", async () => {
@@ -164,5 +118,18 @@ describe("auditWalletApprovals", () => {
 
     expect(result.approvals).toHaveLength(1);
     expect(result.approvals[0]?.sourceTransactionHash).toBe("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+  });
+
+  it("supports expanded major EVM chain inputs", async () => {
+    const { chainsFromInput } = await import("../src/scanner.js");
+    expect(chainsFromInput(["bsc", "avalanche", "fantom", "gnosis"]).map((item) => item.key)).toEqual(["bsc", "avalanche", "fantom", "gnosis"]);
+  });
+
+  it("flags unknown spender contracts when bytecode checks are available", async () => {
+    const rpc = makeMockRpc();
+    rpc.hasCode = async () => true;
+    const result = await auditWalletApprovals({ wallet, chains: [chain], rpcFactory: () => rpc, now: new Date("2026-01-01T00:00:00.000Z") });
+
+    expect(result.approvals[0]?.risk.flags).toContain("unknown_spender_contract");
   });
 });

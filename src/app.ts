@@ -172,7 +172,7 @@ function agentEntrypoints(options: CreateServerOptions) {
   return [
     {
       id: "audit_approvals",
-      aliases: ["audit-approvals"],
+      aliases: ["audit-approvals", "audit"],
       name: "Audit risky token approvals",
       description: "Scan an EVM wallet for risky ERC-20 approvals and return revoke transaction data.",
       method: "POST",
@@ -276,7 +276,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   async function handleInvoke(c: Context) {
     const rawBody = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const body = parseInvokeBody(rawBody);
-    if (body.entrypoint && !["audit_approvals", "audit-approvals"].includes(body.entrypoint)) {
+    if (body.entrypoint && !["audit_approvals", "audit-approvals", "audit"].includes(body.entrypoint)) {
       return c.json({ error: "invalid_request", message: "unsupported entrypoint" }, 400);
     }
     const invalid = validateAuditRequest(body);
@@ -298,6 +298,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   app.post("/invoke", handleInvoke);
   app.post("/entrypoints/audit_approvals/invoke", handleInvoke);
   app.post("/entrypoints/audit-approvals/invoke", handleInvoke);
+  app.post("/entrypoints/audit/invoke", handleInvoke);
 
   return app;
 }

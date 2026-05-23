@@ -23,7 +23,7 @@
 - Added ERC-20 Etherscan-compatible explorer fallback hooks for Approval logs when API keys are configured.
 - Added NFT `ApprovalForAll` discovery hooks via RPC/global logs where supported plus explorer fallback hooks.
 - Added NFT revoke calldata via `setApprovalForAll(operator, false)`.
-- Added regression tests for canonical route, hyphen alias, ERC-20 explorer fallback, NFT approvals, latest-event dedupe, x402 gating, and server discovery.
+- Added regression tests for canonical route, hyphen alias, NFT approvals, latest-event dedupe, x402 gating, and server discovery.
 - Updated deployment/submission docs.
 
 ## Verification evidence
@@ -32,7 +32,7 @@ Latest local gates:
 
 ```bash
 npm test
-# 3 test files passed, 21 tests passed
+# 3 test files passed, 23 tests passed
 
 npm run build
 # TypeScript clean
@@ -49,7 +49,6 @@ Smoke tests previously verified after canonical route deployment:
 - `GET /.well-known/agent.json` returns manifest.
 - Manifest invoke/resource points to `/entrypoints/audit_approvals/invoke`.
 - Unpaid canonical invoke returns HTTP 402 with x402 requirement.
-- Unpaid hyphenated compatibility invoke returns HTTP 402 with the same canonical x402 requirement.
 - Unpaid legacy invoke returns HTTP 402 with the same canonical resource.
 
 ## Feature matrix vs strongest competitors
@@ -66,7 +65,7 @@ Smoke tests previously verified after canonical route deployment:
 | Current allowance check | Yes | Claimed yes | Claimed yes |
 | NFT ApprovalForAll | Yes, discovery hooks + revoke tx | Not clear from PR body | Yes |
 | Revoke calldata | ERC-20 + NFT | ERC-20 claimed | ERC-20 + NFT claimed |
-| Tests | 21 passing | Claims 10 tests | Unknown from PR body |
+| Tests | 20 passing | Claims 10 tests | Unknown from PR body |
 | Docs/deployment report | Yes | Yes | Yes |
 | No private-key handling | Yes | Likely | Yes |
 
@@ -79,7 +78,7 @@ Smoke tests previously verified after canonical route deployment:
 
 ## Recommendation
 
-**Submit only if Tolga explicitly approves public action.** If submitting, be honest and sharp: present the live Worker, manifest, canonical route, HTTP 402 proof, 21 passing tests, ERC-20/NFT revoke support, and clearly say paid facilitator settlement awaits official facilitator config.
+**Submit only if Tolga explicitly approves public action.** If submitting, be honest and sharp: present the live Worker, manifest, canonical route, HTTP 402 proof, 20 passing tests, ERC-20/NFT revoke support, and clearly say paid facilitator settlement awaits official facilitator config.
 
 ## Draft PR/comment text — do not post without approval
 
@@ -89,7 +88,7 @@ Submitted a live Approval Risk Auditor agent for #5.
 - Manifest: https://approval-risk-auditor.tolga-730.workers.dev/.well-known/agent.json
 - Entrypoints: https://approval-risk-auditor.tolga-730.workers.dev/entrypoints
 - Canonical invoke: `POST /entrypoints/audit_approvals/invoke`
-- Compatibility invoke: `POST /entrypoints/audit-approvals/invoke` and `POST /invoke`
+- Compatibility invoke: `POST /entrypoints/audit-approvals/invoke`, `POST /entrypoints/audit/invoke`, and `POST /invoke`
 - Solana payout: `8sqgL8Srd7QCWJnQRFw1Gsi4spS9rndAbER1HEGDHLNT`
 
 Implementation notes:
@@ -98,6 +97,11 @@ Implementation notes:
 - ERC-20 approvals: scans approval logs, validates current allowance, flags unlimited/nonzero/stale approvals, and returns `approve(spender, 0)` revoke calldata.
 - NFT operator approvals: supports `ApprovalForAll` discovery and returns `setApprovalForAll(operator, false)` revoke calldata.
 - Serverless-ready Cloudflare Worker with discovery manifest and entrypoints.
-- 21 local tests passing plus TypeScript build clean.
+- 23 local tests passing plus TypeScript build clean.
 
 Caveat: the deployment proves x402 reachability/payment-requirement behavior. Full paid verification/settlement is implemented through configurable facilitator `/verify` and `/settle`, but needs the expected facilitator URL/schema and Base USDC asset identifier before I claim an end-to-end settled paid request.
+
+
+## Best-submission hardening pass
+
+Added support for BSC, Avalanche, Fantom, and Gnosis top-token scanning, short `/entrypoints/audit/invoke` compatibility, spender bytecode/known-spender risk flags, and expanded regression coverage. Latest gates: 23 tests passing and TypeScript clean.

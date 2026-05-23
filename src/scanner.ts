@@ -1,5 +1,5 @@
 import { createPublicClient, decodeEventLog, encodeEventTopics, getAddress, http, isAddress, type Address, type Hex, type Log } from "viem";
-import { arbitrum, base, mainnet, optimism, polygon } from "viem/chains";
+import { arbitrum, avalanche, base, bsc, fantom, gnosis, mainnet, optimism, polygon } from "viem/chains";
 import {
   buildErc20RevokeTx,
   buildErc721ApprovalForAllRevokeTx,
@@ -72,6 +72,7 @@ export interface RpcClient {
   getNftApprovalForAllLogs?(wallet: Address, fromBlock: bigint, toBlock?: bigint): Promise<ApprovalLog[]>;
   getAllowance(token: TrackedToken, wallet: Address, spender: Address): Promise<bigint>;
   getBlockTimestamp(blockNumber: bigint): Promise<Date>;
+  hasCode?(address: Address): Promise<boolean>;
 }
 
 export interface AuditedApproval {
@@ -108,6 +109,20 @@ export interface AuditOptions {
   rpcFactory?: (chain: ChainConfig) => RpcClient;
   now?: Date;
   staleDays?: number;
+}
+
+
+const KNOWN_PROTOCOL_SPENDERS = new Set<string>([
+  // Permit2, routers, exchanges and NFT marketplaces commonly seen in approval history.
+  "0x000000000022d473030f116ddee9f6b43ac78ba3", // Uniswap Permit2
+  "0x1111111254eeb25477b68fb85ed929f73a960582", // 1inch router
+  "0xdef1c0ded9bec7f1a1670819833240f027b25eff", // 0x exchange proxy
+  "0x00000000006c3852cbef3e08e8df289169ede581", // Seaport 1.1
+  "0x00000000000001ad428e4906ae43d8f9852d0dd6", // Seaport conduit controller
+].map((addr) => addr.toLowerCase()));
+
+function isKnownSpender(address: Address): boolean {
+  return KNOWN_PROTOCOL_SPENDERS.has(address.toLowerCase());
 }
 
 export function getDefaultChains(): ChainConfig[] {
@@ -164,11 +179,52 @@ export function getDefaultChains(): ChainConfig[] {
         { symbol: "WETH", decimals: 18, standard: "erc20", address: "0x4200000000000000000000000000000000000006" },
       ],
     },
+    {
+      key: "bsc",
+      chainId: 56,
+      fromBlock: 35_000_000n,
+      rpcUrl: process.env.BSC_RPC_URL,
+      trackedTokens: [
+        { symbol: "USDT", decimals: 18, standard: "erc20", address: "0x55d398326f99059fF775485246999027B3197955" },
+        { symbol: "USDC", decimals: 18, standard: "erc20", address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" },
+        { symbol: "WBNB", decimals: 18, standard: "erc20", address: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" },
+      ],
+    },
+    {
+      key: "avalanche",
+      chainId: 43114,
+      fromBlock: 40_000_000n,
+      rpcUrl: process.env.AVALANCHE_RPC_URL,
+      trackedTokens: [
+        { symbol: "USDC", decimals: 6, standard: "erc20", address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E" },
+        { symbol: "WAVAX", decimals: 18, standard: "erc20", address: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7" },
+      ],
+    },
+    {
+      key: "fantom",
+      chainId: 250,
+      fromBlock: 70_000_000n,
+      rpcUrl: process.env.FANTOM_RPC_URL,
+      trackedTokens: [
+        { symbol: "USDC", decimals: 6, standard: "erc20", address: "0x04068DA6C83AFCFA0e13ba15A6696662335D5B75" },
+        { symbol: "WFTM", decimals: 18, standard: "erc20", address: "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83" },
+      ],
+    },
+    {
+      key: "gnosis",
+      chainId: 100,
+      fromBlock: 32_000_000n,
+      rpcUrl: process.env.GNOSIS_RPC_URL,
+      trackedTokens: [
+        { symbol: "WXDAI", decimals: 18, standard: "erc20", address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d" },
+        { symbol: "USDC", decimals: 6, standard: "erc20", address: "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83" },
+      ],
+    },
   ];
 }
 
 function viemChainFor(key: SupportedChainKey) {
-  return { ethereum: mainnet, base, polygon, arbitrum, optimism }[key];
+  return { ethereum: mainnet, base, polygon, arbitrum, optimism, bsc, avalanche, fantom, gnosis }[key];
 }
 
 export function chainsFromInput(chains: Array<string | number> | undefined): ChainConfig[] {
@@ -236,6 +292,10 @@ export function createViemRpcClient(chain: ChainConfig): RpcClient {
       const block = await publicClient.getBlock({ blockNumber });
       return new Date(Number(block.timestamp) * 1000);
     },
+    async hasCode(address) {
+      const code = await publicClient.getCode({ address });
+      return Boolean(code && code !== "0x");
+    },
   };
 }
 
@@ -246,6 +306,10 @@ const EXPLORER_APIS: Partial<Record<SupportedChainKey, { baseUrl: string; apiKey
   polygon: { baseUrl: "https://api.polygonscan.com/api", apiKeyEnv: "POLYGONSCAN_API_KEY" },
   arbitrum: { baseUrl: "https://api.arbiscan.io/api", apiKeyEnv: "ARBISCAN_API_KEY" },
   optimism: { baseUrl: "https://api-optimistic.etherscan.io/api", apiKeyEnv: "OPTIMISTIC_ETHERSCAN_API_KEY" },
+  bsc: { baseUrl: "https://api.bscscan.com/api", apiKeyEnv: "BSCSCAN_API_KEY" },
+  avalanche: { baseUrl: "https://api.snowtrace.io/api", apiKeyEnv: "SNOWTRACE_API_KEY" },
+  fantom: { baseUrl: "https://api.ftmscan.com/api", apiKeyEnv: "FTMSCAN_API_KEY" },
+  gnosis: { baseUrl: "https://api.gnosisscan.io/api", apiKeyEnv: "GNOSISSCAN_API_KEY" },
 };
 
 const APPROVAL_TOPIC0 = "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925";
@@ -320,7 +384,7 @@ export async function auditWalletApprovals(options: AuditOptions): Promise<Audit
         const riskOptions: { now: Date; staleDays?: number } = { now };
         if (options.staleDays !== undefined) riskOptions.staleDays = options.staleDays;
         const risk = classifyApprovalRisk(
-          { standard: token.standard, allowance: allowance.toString(), lastUpdatedAt, tokenSymbol: token.symbol, spender },
+          { standard: token.standard, allowance: allowance.toString(), lastUpdatedAt, tokenSymbol: token.symbol, spender, spenderHasCode: rpc.hasCode ? await rpc.hasCode(spender).catch(() => undefined) : undefined, knownSpender: isKnownSpender(spender) },
           riskOptions,
         );
         const revokeTx = buildErc20RevokeTx({ chainId: chain.chainId, tokenAddress: token.address, spender });
@@ -356,7 +420,7 @@ export async function auditWalletApprovals(options: AuditOptions): Promise<Audit
       const lastUpdatedAt = (await rpc.getBlockTimestamp(log.blockNumber)).toISOString();
       const riskOptions: { now: Date; staleDays?: number } = { now };
       if (options.staleDays !== undefined) riskOptions.staleDays = options.staleDays;
-      const risk = classifyApprovalRisk({ standard: "erc721_approval_for_all", approved: true, lastUpdatedAt, tokenSymbol: "NFT", spender }, riskOptions);
+      const risk = classifyApprovalRisk({ standard: "erc721_approval_for_all", approved: true, lastUpdatedAt, tokenSymbol: "NFT", spender, spenderHasCode: rpc.hasCode ? await rpc.hasCode(spender).catch(() => undefined) : undefined, knownSpender: isKnownSpender(spender) }, riskOptions);
       const revokeTx = buildErc721ApprovalForAllRevokeTx({ chainId: chain.chainId, tokenAddress, spender });
       approvals.push({
         chain: chain.key,
@@ -396,6 +460,7 @@ export async function auditWalletApprovals(options: AuditOptions): Promise<Audit
       "Reads current allowance(owner, spender) before reporting, so stale event history with zero current allowance is ignored.",
       "Flags effectively unlimited allowances and approvals older than the configured stale-day threshold.",
       "Scans NFT ApprovalForAll(owner, operator, approved) events where RPC/explorer access supports contract-wide log queries.",
+      "Classifies unknown EOAs/contracts as higher-risk spenders when bytecode checks are available.",
       "Builds safe revoke calldata using approve(spender, 0) for ERC-20 approvals and setApprovalForAll(operator, false) for NFT operator approvals.",
     ],
   };
