@@ -40,8 +40,16 @@ Usage:
   npm start -- audit --wallet 0x... [--chains ethereum,base] [--out report.json]
 
 Environment:
+  PAYMENT_ADDRESS enables x402 enforcement on /invoke and /audit
+  PRICE_USD, PAYMENT_NETWORK, PAYMENT_ASSET, PUBLIC_BASE_URL, X402_FACILITATOR_URL
   ETHEREUM_RPC_URL, BASE_RPC_URL, POLYGON_RPC_URL, ARBITRUM_RPC_URL, OPTIMISM_RPC_URL
-  PAYMENT_ADDRESS and PRICE_USD for x402-compatible payment metadata on /audit responses
+
+HTTP endpoints:
+  GET  /health
+  GET  /.well-known/agent.json
+  GET  /entrypoints
+  POST /invoke
+  POST /audit
 `);
 }
 

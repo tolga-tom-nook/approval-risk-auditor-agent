@@ -1,0 +1,15 @@
+name = "approval-risk-auditor"
+main = "src/worker.ts"
+compatibility_date = "2025-11-21"
+
+[vars]
+PRICE_USD = "0.01"
+PAYMENT_NETWORK = "base"
+PAYMENT_ASSET = "USDC"
+
+PAYMENT_ADDRESS = "0xd2475a9a1a6eC3B76e1c38F9C368084cfd98D46a"
+PUBLIC_BASE_URL = "https://approval-risk-auditor.tolga-730.workers.dev"
+# Set these with `npx wrangler secret put ...` or dashboard secrets before public deployment:
+# PAYMENT_ADDRESS
+# X402_FACILITATOR_URL
+# PUBLIC_BASE_URL = "https://approval-risk-auditor.<your-subdomain>.workers.dev"

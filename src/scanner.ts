@@ -2,6 +2,7 @@ import { createPublicClient, decodeEventLog, encodeEventTopics, getAddress, http
 import { arbitrum, base, mainnet, optimism, polygon } from "viem/chains";
 import {
   buildErc20RevokeTx,
+  buildErc721ApprovalForAllRevokeTx,
   classifyApprovalRisk,
   normalizeChainKey,
   summarizeRisk,
@@ -10,6 +11,16 @@ import {
   type RiskClassification,
   type SupportedChainKey,
 } from "./auditor.js";
+
+const approvalForAllEvent = {
+  type: "event",
+  name: "ApprovalForAll",
+  inputs: [
+    { indexed: true, name: "owner", type: "address" },
+    { indexed: true, name: "operator", type: "address" },
+    { indexed: false, name: "approved", type: "bool" },
+  ],
+} as const;
 
 const erc20ApprovalEvent = {
   type: "event",
@@ -58,6 +69,7 @@ export interface ApprovalLog {
 
 export interface RpcClient {
   getApprovalLogs(token: TrackedToken, wallet: Address, fromBlock: bigint, toBlock?: bigint): Promise<ApprovalLog[]>;
+  getNftApprovalForAllLogs?(wallet: Address, fromBlock: bigint, toBlock?: bigint): Promise<ApprovalLog[]>;
   getAllowance(token: TrackedToken, wallet: Address, spender: Address): Promise<bigint>;
   getBlockTimestamp(blockNumber: bigint): Promise<Date>;
 }
@@ -192,6 +204,25 @@ export function createViemRpcClient(chain: ChainConfig): RpcClient {
         }
       });
     },
+    async getNftApprovalForAllLogs(wallet, fromBlock, toBlock) {
+      const logs = await publicClient.getLogs({
+        event: approvalForAllEvent,
+        args: { owner: wallet },
+        fromBlock,
+        toBlock,
+      });
+      return logs.flatMap((log: Log) => {
+        try {
+          const decoded = decodeEventLog({ abi: [approvalForAllEvent], data: log.data, topics: log.topics });
+          const args = decoded.args as { operator?: string; approved?: boolean };
+          const operator = String(args.operator ?? "");
+          if (!args.approved || !isAddress(operator) || !log.address || !log.blockNumber || !log.transactionHash) return [];
+          return [{ tokenAddress: log.address, spender: operator, blockNumber: log.blockNumber, transactionHash: log.transactionHash }];
+        } catch {
+          return [];
+        }
+      });
+    },
     async getAllowance(token, wallet, spender) {
       const allowance = await publicClient.readContract({
         address: getAddress(token.address),
@@ -208,6 +239,63 @@ export function createViemRpcClient(chain: ChainConfig): RpcClient {
   };
 }
 
+
+const EXPLORER_APIS: Partial<Record<SupportedChainKey, { baseUrl: string; apiKeyEnv: string }>> = {
+  ethereum: { baseUrl: "https://api.etherscan.io/api", apiKeyEnv: "ETHERSCAN_API_KEY" },
+  base: { baseUrl: "https://api.basescan.org/api", apiKeyEnv: "BASESCAN_API_KEY" },
+  polygon: { baseUrl: "https://api.polygonscan.com/api", apiKeyEnv: "POLYGONSCAN_API_KEY" },
+  arbitrum: { baseUrl: "https://api.arbiscan.io/api", apiKeyEnv: "ARBISCAN_API_KEY" },
+  optimism: { baseUrl: "https://api-optimistic.etherscan.io/api", apiKeyEnv: "OPTIMISTIC_ETHERSCAN_API_KEY" },
+};
+
+const APPROVAL_TOPIC0 = "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925";
+const APPROVAL_FOR_ALL_TOPIC0 = "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31";
+
+function topicAddress(address: Address): Hex {
+  return `0x000000000000000000000000${address.slice(2).toLowerCase()}` as Hex;
+}
+
+function addressFromTopic(topic: string): Address | undefined {
+  const value = `0x${topic.slice(-40)}`;
+  return isAddress(value) ? getAddress(value) : undefined;
+}
+
+function explorerConfig(chain: ChainConfig): { baseUrl: string; apiKey?: string } | undefined {
+  const cfg = EXPLORER_APIS[chain.key];
+  if (!cfg) return undefined;
+  const apiKey = process.env[cfg.apiKeyEnv] || process.env.ETHERSCAN_API_KEY;
+  return { baseUrl: cfg.baseUrl, ...(apiKey ? { apiKey } : {}) };
+}
+
+async function fetchExplorerLogs(chain: ChainConfig, topic0: string, owner: Address, address?: string): Promise<ApprovalLog[]> {
+  const cfg = explorerConfig(chain);
+  if (!cfg) return [];
+  const params = new URLSearchParams({
+    module: "logs",
+    action: "getLogs",
+    fromBlock: chain.fromBlock.toString(),
+    toBlock: "latest",
+    topic0,
+    topic1: topicAddress(owner),
+    topic0_1_opr: "and",
+  });
+  if (address) params.set("address", getAddress(address));
+  if (cfg.apiKey) params.set("apikey", cfg.apiKey);
+  const res = await fetch(`${cfg.baseUrl}?${params.toString()}`);
+  const payload = (await res.json().catch(() => ({}))) as { status?: string; result?: unknown };
+  if (!Array.isArray(payload.result)) return [];
+  return payload.result.flatMap((raw): ApprovalLog[] => {
+    const log = raw as Record<string, string>;
+    const topics = Array.isArray((raw as { topics?: unknown }).topics) ? ((raw as { topics: string[] }).topics) : [];
+    const spender = addressFromTopic(topics[2] ?? "");
+    const tokenAddress = typeof log.address === "string" && isAddress(log.address) ? getAddress(log.address) : undefined;
+    const blockNumber = typeof log.blockNumber === "string" ? BigInt(log.blockNumber) : undefined;
+    const transactionHash = typeof log.transactionHash === "string" ? log.transactionHash : undefined;
+    if (!spender || !tokenAddress || blockNumber === undefined || !transactionHash) return [];
+    return [{ tokenAddress, spender, blockNumber, transactionHash }];
+  });
+}
+
 export async function auditWalletApprovals(options: AuditOptions): Promise<AuditResult> {
   if (!isAddress(options.wallet)) throw new Error(`Invalid wallet: ${options.wallet}`);
   const wallet = getAddress(options.wallet);
@@ -218,7 +306,9 @@ export async function auditWalletApprovals(options: AuditOptions): Promise<Audit
     const rpc = options.rpcFactory ? options.rpcFactory(chain) : createViemRpcClient(chain);
     for (const token of chain.trackedTokens.filter((t) => t.standard === "erc20")) {
       const seenSpenders = new Set<string>();
-      const logs = await rpc.getApprovalLogs(token, wallet, chain.fromBlock);
+      const rpcLogs = await rpc.getApprovalLogs(token, wallet, chain.fromBlock);
+      const explorerLogs = await fetchExplorerLogs(chain, APPROVAL_TOPIC0, wallet, token.address).catch(() => []);
+      const logs = [...rpcLogs, ...explorerLogs];
       for (const log of logs.sort((a, b) => Number(b.blockNumber - a.blockNumber))) {
         if (!isAddress(log.spender)) continue;
         const spender = getAddress(log.spender);
@@ -251,6 +341,39 @@ export async function auditWalletApprovals(options: AuditOptions): Promise<Audit
         });
       }
     }
+
+    const nftRpcLogs = rpc.getNftApprovalForAllLogs ? await rpc.getNftApprovalForAllLogs(wallet, chain.fromBlock).catch(() => []) : [];
+    const nftExplorerLogs = await fetchExplorerLogs(chain, APPROVAL_FOR_ALL_TOPIC0, wallet).catch(() => []);
+    const nftLogs = [...nftRpcLogs, ...nftExplorerLogs];
+    const seenNftOperators = new Set<string>();
+    for (const log of nftLogs.sort((a, b) => Number(b.blockNumber - a.blockNumber))) {
+      if (!isAddress(log.spender) || !isAddress(log.tokenAddress)) continue;
+      const tokenAddress = getAddress(log.tokenAddress);
+      const spender = getAddress(log.spender);
+      const key = `${tokenAddress}:${spender}`;
+      if (seenNftOperators.has(key)) continue;
+      seenNftOperators.add(key);
+      const lastUpdatedAt = (await rpc.getBlockTimestamp(log.blockNumber)).toISOString();
+      const riskOptions: { now: Date; staleDays?: number } = { now };
+      if (options.staleDays !== undefined) riskOptions.staleDays = options.staleDays;
+      const risk = classifyApprovalRisk({ standard: "erc721_approval_for_all", approved: true, lastUpdatedAt, tokenSymbol: "NFT", spender }, riskOptions);
+      const revokeTx = buildErc721ApprovalForAllRevokeTx({ chainId: chain.chainId, tokenAddress, spender });
+      approvals.push({
+        chain: chain.key,
+        chainId: chain.chainId,
+        tokenAddress,
+        tokenSymbol: "NFT collection",
+        tokenDecimals: 0,
+        standard: "erc721_approval_for_all",
+        wallet,
+        spender,
+        allowance: "approval_for_all",
+        lastUpdatedAt,
+        sourceTransactionHash: log.transactionHash,
+        risk,
+        revokeTx,
+      });
+    }
   }
 
   return {
@@ -269,10 +392,11 @@ export async function auditWalletApprovals(options: AuditOptions): Promise<Audit
     },
     revoke_tx_data: approvals.map((approval) => approval.revokeTx),
     methodology: [
-      "Scans Approval(owner, spender, value) logs for a curated top-token list per chain.",
+      "Scans Approval(owner, spender, value) logs for a curated top-token list per chain using RPC and Etherscan-compatible explorer fallback when configured.",
       "Reads current allowance(owner, spender) before reporting, so stale event history with zero current allowance is ignored.",
       "Flags effectively unlimited allowances and approvals older than the configured stale-day threshold.",
-      "Builds safe revoke calldata using approve(spender, 0) for ERC-20 approvals.",
+      "Scans NFT ApprovalForAll(owner, operator, approved) events where RPC/explorer access supports contract-wide log queries.",
+      "Builds safe revoke calldata using approve(spender, 0) for ERC-20 approvals and setApprovalForAll(operator, false) for NFT operator approvals.",
     ],
   };
 }
